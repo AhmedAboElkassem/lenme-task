@@ -2,6 +2,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
+from django.core.cache import cache
 from .models import Loan, Offer, Payment, Profile
 from .serializers import RegisterSerializer, LoanSerializer, OfferSerializer, PaymentSerializer
 from datetime import datetime
@@ -18,17 +21,38 @@ def register(request):
 
 @api_view(['POST', 'GET'])
 @permission_classes([IsAuthenticated])
+# @permission_classes([AllowAny])
 def loan_list_create(request):
     if request.method == 'POST':
         serializer = LoanSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save(borrower=request.user)
+            # Invalidate the cache when a new loan is created
+            cache.delete('loan_list')
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    elif request.method == 'GET':  
-        loans = Loan.objects.all()
-        serializer = LoanSerializer(loans, many=True)
-        return Response(serializer.data)
+    elif request.method == 'GET':
+        return cached_loan_list_create(request)
+
+@cache_page(60 * 1, key_prefix='loan_list')
+@permission_classes([IsAuthenticated])
+# @permission_classes([AllowAny])
+def cached_loan_list_create(request):
+    loans = Loan.objects.all()
+    serializer = LoanSerializer(loans, many=True)
+    print("Data from database")
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@cache_page(60 * 1)
+@permission_classes([AllowAny])
+def cached_loan_list(request):
+    loans = Loan.objects.all()
+    serializer = LoanSerializer(loans, many=True)
+    return Response(serializer.data)
+
+
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
